@@ -45,70 +45,57 @@ function parseNaverUrl(url) {
 
 // Helper: Scrape Naver Search Results
 async function scrapeNaverSearch(keyword) {
-    const urls = [
-        `https://search.naver.com/search.naver?ssc=tab.blog.all&sm=tab_jum&query=${encodeURIComponent(keyword)}`,
-        `https://m.blog.naver.com/SectionPostSearch.naver?searchValue=${encodeURIComponent(keyword)}`
-    ];
+    const searchUrl = `https://search.naver.com/search.naver?ssc=tab.blog.all&sm=tab_jum&query=${encodeURIComponent(keyword)}`;
+    
+    console.log(`[Search] Starting search: ${searchUrl}`);
 
-    console.log(`[Search] Starting search for keyword: "${keyword}"`);
+    try {
+        const response = await axios.get(searchUrl, {
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Referer': 'https://www.naver.com/',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache'
+            },
+            timeout: 8000
+        });
+        
+        const $ = cheerio.load(response.data);
+        const results = [];
 
-    for (const searchUrl of urls) {
-        try {
-            console.log(`[Search] Fetching URL: ${searchUrl}`);
-            const response = await axios.get(searchUrl, {
-                headers: { 
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
-                },
-                timeout: 6000
-            });
-            
-            console.log(`[Search] Response status: ${response.status}`);
-            const $ = cheerio.load(response.data);
-            const results = [];
-
-            // Case 1: INITIAL_STATE (Mobile)
-            const stateMatch = response.data.match(/window\.__INITIAL_STATE__\s*=\s*({.+?});/);
-            if (stateMatch) {
-                console.log('[Search] Found window.__INITIAL_STATE__');
-                const state = JSON.parse(stateMatch[1]);
-                const items = state.postList?.data?.items || [];
-                if (items.length > 0) {
-                    console.log(`[Search] Extracted ${items.length} items from INITIAL_STATE`);
-                    return items.slice(0, 10).map((item, idx) => ({
-                        rank: idx + 1,
-                        title: item.title?.replace(/<[^>]+>/g, ''),
-                        url: `https://blog.naver.com/${item.blogId}/${item.logNo}`,
-                        blogName: item.blogName || 'Naver Blog'
-                    }));
-                }
+        // Updated Selectors for ssc=tab.blog.all
+        $('.title_area, .api_title_area').each((i, el) => {
+            if (results.length >= 10) return;
+            const aTag = $(el).find('a').first();
+            const title = aTag.text().trim();
+            const url = aTag.attr('href');
+            if (title && url && url.includes('blog.naver.com')) {
+                results.push({ rank: results.length + 1, title, url, blogName: 'Naver Blog' });
             }
+        });
 
-            // Case 2: Selectors (PC/Mobile HTML)
-            const selectors = ['.api_txt_lines', '.total_tit', '.title_link', '.api_title_area a', 'a.api_link_target'];
-            for (const selector of selectors) {
-                $(selector).each((i, el) => {
-                    if (results.length >= 10) return;
-                    const title = $(el).text().trim();
-                    const url = $(el).attr('href');
-                    if (title && url && url.includes('blog.naver.com')) {
-                        results.push({ rank: results.length + 1, title, url, blogName: 'Naver Blog' });
-                    }
+        // Fallback: If CSS selectors fail, try Regex on the whole body
+        if (results.length === 0) {
+            console.log('[Search] CSS selectors failed, trying Regex fallback...');
+            const blogUrlRegex = /https:\/\/blog\.naver\.com\/[a-zA-Z0-9_-]+\/\d+/g;
+            const matches = response.data.match(blogUrlRegex);
+            if (matches && matches.length > 0) {
+                const uniqueUrls = [...new Set(matches)];
+                uniqueUrls.slice(0, 10).forEach((url, idx) => {
+                    results.push({ rank: idx + 1, title: '네이버 블로그 포스팅', url, blogName: 'Naver Blog' });
                 });
-                if (results.length > 0) {
-                    console.log(`[Search] Found ${results.length} items using selector: ${selector}`);
-                    break;
-                }
+                console.log(`[Search] Regex found ${results.length} unique URLs`);
             }
-
-            if (results.length > 0) return results;
-            console.log(`[Search] No results found on ${searchUrl}`);
-        } catch (e) { 
-            console.error(`[Search] Error fetching ${searchUrl}:`, e.message); 
         }
+
+        console.log(`[Search] Final results found: ${results.length}`);
+        return results;
+    } catch (e) { 
+        console.error(`[Search] Critical error:`, e.message);
+        return [];
     }
-    console.log('[Search] All search attempts failed.');
-    return [];
 }
 
 // Endpoint: Analyze
