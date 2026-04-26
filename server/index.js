@@ -208,12 +208,18 @@ app.post('/api/competitors', async (req, res) => {
                 if (contentArea.length === 0) contentArea = $comp('#postViewArea').first();
                 if (contentArea.length === 0) contentArea = $comp('.post_ct').first();
                 
+                const actualTitle = $comp('.se-title-text').first().text().trim() || $comp('.htitle').first().text().trim() || result.title;
                 const text = contentArea.text().replace(/\s+/g, ' ').trim();
                 const charCount = text.replace(/\s/g, '').length || 0;
                 const imgCount = contentArea.find('img').length || 0;
                 
-                console.log(`[Comp] SUCCESS: ${result.title.substring(0,15)}... (${charCount} chars, ${imgCount} imgs)`);
-                return { ...result, charCount, imgCount };
+                console.log(`[Comp] SUCCESS: ${actualTitle.substring(0,15)}... (${charCount} chars, ${imgCount} imgs)`);
+                return { 
+                    ...result, 
+                    title: actualTitle,
+                    charCount, 
+                    imgCount 
+                };
             } catch (err) {
                 console.error(`[Comp] FAILED for ${result.url}:`, err.message);
                 return { ...result, charCount: 0, imgCount: 0 };
