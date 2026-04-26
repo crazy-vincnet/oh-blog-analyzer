@@ -48,6 +48,7 @@ function parseNaverUrl(url) {
 // Endpoint: Analyze
 app.post('/api/analyze', async (req, res) => {
     const { url, keywords = [] } = req.body;
+
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
     const info = parseNaverUrl(url);
@@ -55,6 +56,7 @@ app.post('/api/analyze', async (req, res) => {
 
     try {
         const targetUrl = `https://blog.naver.com/PostView.naver?blogId=${info.blogId}&logNo=${info.logNo}&redirect=Dlog&widgetTypeCall=true&directAccess=false`;
+        
         const response = await axios.get(targetUrl, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -64,43 +66,109 @@ app.post('/api/analyze', async (req, res) => {
         });
 
         const $ = cheerio.load(response.data);
+
+        if ($('.error_content').length > 0 || $('title').text().includes('페이지를 찾을 수 없습니다')) {
+            return res.status(404).json({ error: '블로그 글을 찾을 수 없습니다. 주소를 다시 확인해주세요.' });
+        }
+
         const title = $('.se-title-text').first().text().trim() || $('.htitle').first().text().trim() || '제목 없음';
         
         let contentArea = $('.se-main-container').first();
         if (contentArea.length === 0) contentArea = $('#postViewArea').first();
         
-        const cleanBodyText = contentArea.text().replace(/\s+/g, ' ').trim();
-        const charCount = cleanBodyText.replace(/\s/g, '').length;
+        if (contentArea.length === 0) {
+            return res.status(422).json({ error: '본문 내용을 추출할 수 없습니다.' });
+        }
+        
+        const contentClone = contentArea.clone();
+        contentClone.find('script, style, .se-component-externalLinks, .se-material').remove();
+        
+        const rawBodyText = contentClone.text();
+        const cleanBodyText = rawBodyText.replace(/\s+/g, ' ').trim();
+        
+        // Character Analysis
+        const charCountExcludingSpaces = cleanBodyText.replace(/\s/g, '').length;
+        const charCountIncludingSpaces = cleanBodyText.length;
+        const koreanCount = (cleanBodyText.match(/[ㄱ-ㅎ가-힣]/g) || []).length;
+        const englishCount = (cleanBodyText.match(/[a-zA-Z]/g) || []).length;
+        const numberCount = (cleanBodyText.match(/[0-9]/g) || []).length;
+        const specialCount = charCountExcludingSpaces - (koreanCount + englishCount + numberCount);
+        
+        const charDetails = {
+            total: charCountExcludingSpaces,
+            totalWithSpaces: charCountIncludingSpaces,
+            korean: koreanCount,
+            english: englishCount,
+            number: numberCount,
+            special: specialCount
+        };
+        
         const imageCount = contentArea.find('img').length;
-        
-        // Simplified SEO Logic for brevity (keeping the structure)
-        const score = Math.min(100, Math.floor((charCount / 2000) * 40 + (imageCount / 12) * 30 + 30));
-        
         const images = [];
         contentArea.find('img').each((i, el) => {
             const src = $(el).attr('src') || $(el).attr('data-lazy-src') || $(el).attr('data-src');
-            if (src && !src.includes('static.regular')) images.push(src);
+            if (src && !src.includes('static.regular') && images.length < 20) {
+                images.push(src);
+            }
         });
+
+        // Keyword Frequency
+        const pureText = cleanBodyText.replace(/[^\w\sㄱ-ㅎ가-힣]/g, ' ');
+        const rawWords = pureText.split(/\s+/).filter(w => w.length > 1 && !/^\d+$/.test(w));
+        const freqMap = {};
+        rawWords.forEach(w => {
+            let word = w.toLowerCase();
+            if (word.length >= 2) freqMap[word] = (freqMap[word] || 0) + 1;
+        });
+
+        const topKeywords = Object.entries(freqMap)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .map(([word, count]) => ({ word, count }));
+
+        const customKeywordsResults = keywords.map(kw => {
+            const regex = new RegExp(kw, 'gi');
+            const count = (cleanBodyText.match(regex) || []).length;
+            const inTitle = title.toLowerCase().includes(kw.toLowerCase());
+            return { keyword: kw, count, inTitle };
+        });
+
+        // SEO Scoring
+        let score = 0;
+        const details = [];
+
+        // Simple scoring rules
+        if (keywords.some(kw => title.includes(kw))) { score += 20; details.push({ criterion: '제목 키워드', score: 20, status: 'good', message: '제목에 키워드가 잘 반영되었습니다.' }); }
+        if (charCountExcludingSpaces > 1500) { score += 30; details.push({ criterion: '글자 수', score: 30, status: 'good', message: '충분한 분량의 글입니다.' }); }
+        else { score += 15; details.push({ criterion: '글자 수', score: 15, status: 'warn', message: '조금 더 내용을 보완하면 좋습니다.' }); }
+        
+        if (imageCount >= 10) { score += 20; details.push({ criterion: '사진 개수', score: 20, status: 'good', message: '사진이 풍부하게 사용되었습니다.' }); }
+        else { score += 10; details.push({ criterion: '사진 개수', score: 10, status: 'warn', message: '사진을 더 추가해 보세요.' }); }
+
+        score += 30; // Base score for structure
 
         // Save to Supabase
         if (supabase) {
             await supabase.from('history').insert([
-                { title, url: targetUrl, score, char_count: charCount, img_count: imageCount }
+                { title, url: targetUrl, score, char_count: charCountExcludingSpaces, img_count: imageCount }
             ]);
         }
 
         res.json({
             title,
-            charCount,
+            charCount: charCountExcludingSpaces,
+            charDetails,
             imageCount,
-            images: images.slice(0, 20),
+            images,
+            topKeywords,
+            customKeywordsResults,
             seoScore: score,
-            seoDetails: [], // Simplified for this migration step
-            url: targetUrl,
-            topKeywords: [],
-            customKeywordsResults: []
+            seoDetails: details,
+            url: targetUrl
         });
+
     } catch (error) {
+        console.error('Analysis error:', error);
         res.status(500).json({ error: 'Failed to analyze' });
     }
 });
@@ -112,31 +180,61 @@ app.get('/api/proxy-image', async (req, res) => {
     try {
         const response = await axios.get(url, {
             responseType: 'arraybuffer',
-            headers: { 'Referer': 'https://blog.naver.com/' }
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://blog.naver.com/'
+            }
         });
         res.set('Content-Type', response.headers['content-type']);
         res.send(response.data);
-    } catch (e) { res.status(500).send('Proxy error'); }
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to proxy image' });
+    }
 });
 
-// Endpoint: History
+// Endpoint: Competitor Analysis
+app.post('/api/competitors', async (req, res) => {
+    const { keyword } = req.body;
+    if (!keyword) return res.status(400).json({ error: 'Keyword required' });
+
+    try {
+        // Simplified competitor scraping logic (reusing existing functions if available)
+        const searchUrl = `https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}`;
+        const response = await axios.get(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        });
+        const $ = cheerio.load(response.data);
+        const competitors = [];
+        $('.title_link').each((i, el) => {
+            if (i < 5) {
+                competitors.push({
+                    rank: i + 1,
+                    title: $(el).text().trim(),
+                    url: $(el).attr('href'),
+                    blogName: 'Naver Blog',
+                    charCount: 0,
+                    imgCount: 0
+                });
+            }
+        });
+        res.json({ competitors });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to analyze competitors' });
+    }
+});
+
+// Endpoint: History & Rankings using Supabase
 app.get('/api/history', async (req, res) => {
     if (!supabase) return res.json([]);
-    const { data, error } = await supabase
-        .from('history')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
+    const { data } = await supabase.from('history').select('*').order('created_at', { ascending: false }).limit(50);
     res.json(data || []);
 });
 
 app.delete('/api/history', async (req, res) => {
-    if (!supabase) return res.status(400).send('No DB');
-    await supabase.from('history').delete().neq('id', 0); // Delete all
-    res.json({ message: 'Cleared' });
+    if (supabase) await supabase.from('history').delete().neq('id', 0);
+    res.json({ success: true });
 });
 
-// Endpoint: Rankings
 app.get('/api/rankings', async (req, res) => {
     if (!supabase) return res.json([]);
     const { data } = await supabase.from('rankings').select('*').order('last_checked', { ascending: false });
@@ -146,7 +244,15 @@ app.get('/api/rankings', async (req, res) => {
 app.post('/api/rank/track', async (req, res) => {
     const { keyword, url } = req.body;
     if (supabase) {
-        await supabase.from('rankings').insert([{ keyword, blog_url: url, rank: 1 }]); // Simplified
+        // Track logic...
+        const searchUrl = `https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}`;
+        const response = await axios.get(searchUrl);
+        const $ = cheerio.load(response.data);
+        let rank = 99;
+        $('.title_link').each((i, el) => {
+            if ($(el).attr('href').includes(url)) rank = i + 1;
+        });
+        await supabase.from('rankings').insert([{ keyword, blog_url: url, rank }]);
     }
     res.json({ success: true });
 });
@@ -156,8 +262,6 @@ app.delete('/api/rankings', async (req, res) => {
     res.json({ success: true });
 });
 
-// Proxy logic for competitors and related-keywords would go here similarly...
-
 async function startServer(port) {
     const serverPort = port || process.env.PORT || 5001;
     app.listen(serverPort, () => {
@@ -165,8 +269,5 @@ async function startServer(port) {
     });
 }
 
-if (require.main === module) {
-    startServer();
-}
-
+if (require.main === module) { startServer(); }
 module.exports = { startServer };
