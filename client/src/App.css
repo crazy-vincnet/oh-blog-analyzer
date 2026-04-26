@@ -1026,9 +1026,207 @@ body {
 .animate-in { animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 @keyframes slideUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
-@media (max-width: 800px) {
-    .dashboard-layout { flex-direction: column; }
-    .sidebar { width: 100%; height: auto; border-right: none; border-bottom: 1px solid #eee; }
-    .main-viewport { padding: 20px; }
-    .stats-row, .detail-cards { grid-template-columns: 1fr; }
+/* Mobile Optimization */
+@media (max-width: 768px) {
+    :root {
+        --sidebar-w: 0px;
+    }
+
+    body {
+        overflow-y: auto;
+    }
+
+    .dashboard-layout {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+        padding-bottom: 80px; /* Space for bottom nav */
+    }
+
+    /* Hide Sidebar, Show Bottom Nav */
+    .sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 70px;
+        flex-direction: row;
+        padding: 0;
+        border-right: none;
+        border-top: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+        z-index: 2000;
+    }
+
+    .sidebar-logo, .sidebar-footer, .version-info {
+        display: none;
+    }
+
+    .sidebar-nav {
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        gap: 0;
+        width: 100%;
+        padding: 0 10px;
+    }
+
+    .sidebar-nav button {
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        font-size: 0.65rem;
+        font-weight: 800;
+        text-align: center;
+        border-radius: 12px;
+        flex: 1;
+        justify-content: center;
+    }
+
+    .sidebar-nav button svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .sidebar-nav button.active {
+        background: none;
+        color: var(--primary);
+        box-shadow: none;
+    }
+
+    .sidebar-nav button:hover {
+        transform: none;
+        background: none;
+    }
+
+    /* Main Content Adjustments */
+    .view-container {
+        padding: 30px 20px;
+    }
+
+    .view-header h1 {
+        font-size: 1.75rem;
+    }
+
+    .view-header p {
+        font-size: 1rem;
+    }
+
+    /* Cards */
+    .card-item, .check-card, .result-intro-card, .stat-box {
+        padding: 24px;
+        border-radius: 20px;
+    }
+
+    /* Analysis View */
+    .score-main {
+        flex-direction: column;
+        gap: 24px;
+        text-align: center;
+    }
+
+    .score-circle-big {
+        width: 140px;
+        height: 140px;
+    }
+
+    .score-circle-big .val {
+        font-size: 2.8rem;
+    }
+
+    .post-title-display {
+        font-size: 1rem;
+        margin-bottom: 16px;
+    }
+
+    .result-top-bar {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .btn-back, .btn-save-img {
+        width: 100%;
+        justify-content: center;
+    }
+
+    /* Stats Row */
+    .stats-row {
+        grid-template-columns: 1fr;
+    }
+
+    .char-breakdown {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Details Grid & Competitors */
+    .detail-cards, .details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tip-item {
+        padding: 20px;
+    }
+
+    .tip-head h4 {
+        font-size: 1.1rem;
+    }
+
+    .tip-item p {
+        padding-left: 0;
+        margin-top: 12px;
+        font-size: 1rem;
+    }
+
+    .kw-check-info .name {
+        font-size: 0.95rem;
+    }
+
+    /* Rankings Table-like items to cards */
+    .rank-item {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 20px;
+    }
+
+    .r-actions-main {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .r-url-text {
+        max-width: 100%;
+    }
+
+    .r-val {
+        text-align: left;
+    }
+
+    /* Dark Mode Bottom Nav */
+    .dark-mode .sidebar {
+        background: rgba(30, 41, 59, 0.95);
+        border-top-color: var(--border);
+    }
+}
+
+@media (max-width: 480px) {
+    .view-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .check-card {
+        padding: 24px 20px;
+    }
+
+    .btn-check {
+        padding: 18px;
+        font-size: 1.1rem;
+    }
+
+    .input-group input[type="text"] {
+        padding: 16px 20px;
+        font-size: 1rem;
+    }
 }
