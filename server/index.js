@@ -158,36 +158,56 @@ app.post('/api/analyze', async (req, res) => {
     } catch (error) { res.status(500).json({ error: 'Failed to analyze' }); }
 });
 
-// Endpoint: Competitor Analysis (Full Restoration)
+// Endpoint: Competitor Analysis (Improved with Concurrent Requests)
 app.post('/api/competitors', async (req, res) => {
     const { keyword } = req.body;
     if (!keyword) return res.status(400).json({ error: 'Keyword required' });
 
     try {
         const topResults = await scrapeNaverSearch(keyword);
-        const competitors = [];
-
-        for (let i = 0; i < Math.min(topResults.length, 5); i++) {
-            try {
-                const info = parseNaverUrl(topResults[i].url);
-                if (info) {
-                    const directUrl = `https://blog.naver.com/PostView.naver?blogId=${info.blogId}&logNo=${info.logNo}`;
-                    const postRes = await axios.get(directUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }, timeout: 4000 });
-                    const $comp = cheerio.load(postRes.data);
-                    let contentArea = $comp('.se-main-container').first();
-                    if (contentArea.length === 0) contentArea = $comp('#postViewArea').first();
-                    
-                    const text = contentArea.text().replace(/\s+/g, ' ').trim();
-                    competitors.push({
-                        ...topResults[i],
-                        charCount: text.replace(/\s/g, '').length || 0,
-                        imgCount: contentArea.find('img').length || 0
-                    });
-                } else { competitors.push({ ...topResults[i], charCount: 0, imgCount: 0 }); }
-            } catch (err) { competitors.push({ ...topResults[i], charCount: 0, imgCount: 0 }); }
+        if (!topResults || topResults.length === 0) {
+            return res.json({ competitors: [] });
         }
+
+        // Parallel processing for speed
+        const competitorPromises = topResults.slice(0, 5).map(async (result) => {
+            try {
+                const info = parseNaverUrl(result.url);
+                if (!info) return { ...result, charCount: 0, imgCount: 0 };
+
+                const directUrl = `https://blog.naver.com/PostView.naver?blogId=${info.blogId}&logNo=${info.logNo}`;
+                const postRes = await axios.get(directUrl, { 
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Referer': 'https://blog.naver.com/',
+                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+                    }, 
+                    timeout: 4000 
+                });
+
+                const $comp = cheerio.load(postRes.data);
+                let contentArea = $comp('.se-main-container').first();
+                if (contentArea.length === 0) contentArea = $comp('#postViewArea').first();
+                if (contentArea.length === 0) contentArea = $comp('.post_ct').first();
+                
+                const text = contentArea.text().replace(/\s+/g, ' ').trim();
+                return {
+                    ...result,
+                    charCount: text.replace(/\s/g, '').length || 0,
+                    imgCount: contentArea.find('img').length || 0
+                };
+            } catch (err) {
+                console.error(`Competitor fetch failed for ${result.url}:`, err.message);
+                return { ...result, charCount: 0, imgCount: 0 };
+            }
+        });
+
+        const competitors = await Promise.all(competitorPromises);
         res.json({ competitors });
-    } catch (error) { res.status(500).json({ error: 'Failed to analyze competitors' }); }
+    } catch (error) {
+        console.error('Competitor Analysis Error:', error.message);
+        res.status(500).json({ error: 'Failed to analyze competitors' });
+    }
 });
 
 // Endpoint: Other features...
