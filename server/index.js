@@ -16,6 +16,7 @@ let supabase;
 
 if (supabaseUrl && supabaseKey) {
     supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('[DB] Supabase client initialized.');
 }
 
 app.use(cors());
@@ -42,29 +43,38 @@ function parseNaverUrl(url) {
     return null;
 }
 
-// Helper: Scrape Naver Search Results (Robust Version)
+// Helper: Scrape Naver Search Results
 async function scrapeNaverSearch(keyword) {
     const urls = [
         `https://m.blog.naver.com/SectionPostSearch.naver?searchValue=${encodeURIComponent(keyword)}`,
         `https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}`
     ];
 
+    console.log(`[Search] Starting search for keyword: "${keyword}"`);
+
     for (const searchUrl of urls) {
         try {
+            console.log(`[Search] Fetching URL: ${searchUrl}`);
             const response = await axios.get(searchUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-                timeout: 5000
+                headers: { 
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+                },
+                timeout: 6000
             });
             
+            console.log(`[Search] Response status: ${response.status}`);
             const $ = cheerio.load(response.data);
             const results = [];
 
-            // Pattern 1: INITIAL_STATE (Mobile Section Search)
+            // Case 1: INITIAL_STATE (Mobile)
             const stateMatch = response.data.match(/window\.__INITIAL_STATE__\s*=\s*({.+?});/);
             if (stateMatch) {
+                console.log('[Search] Found window.__INITIAL_STATE__');
                 const state = JSON.parse(stateMatch[1]);
                 const items = state.postList?.data?.items || [];
                 if (items.length > 0) {
+                    console.log(`[Search] Extracted ${items.length} items from INITIAL_STATE`);
                     return items.slice(0, 10).map((item, idx) => ({
                         rank: idx + 1,
                         title: item.title?.replace(/<[^>]+>/g, ''),
@@ -74,21 +84,30 @@ async function scrapeNaverSearch(keyword) {
                 }
             }
 
-            // Pattern 2: Standard Selectors
-            $('.bx, .view_wrap, .total_wrap').each((i, el) => {
-                if (results.length >= 10) return;
-                const tEl = $(el).find('.api_txt_lines, .total_tit, .title_link').first();
-                const title = tEl.text().trim();
-                const url = tEl.attr('href');
-                const blogName = $(el).find('.sub_txt, .name, .blog_name').first().text().trim();
-                if (title && url && url.includes('blog.naver.com')) {
-                    results.push({ rank: results.length + 1, title, url, blogName: blogName || 'Naver Blog' });
+            // Case 2: Selectors (PC/Mobile HTML)
+            const selectors = ['.api_txt_lines', '.total_tit', '.title_link', '.api_title_area a', 'a.api_link_target'];
+            for (const selector of selectors) {
+                $(selector).each((i, el) => {
+                    if (results.length >= 10) return;
+                    const title = $(el).text().trim();
+                    const url = $(el).attr('href');
+                    if (title && url && url.includes('blog.naver.com')) {
+                        results.push({ rank: results.length + 1, title, url, blogName: 'Naver Blog' });
+                    }
+                });
+                if (results.length > 0) {
+                    console.log(`[Search] Found ${results.length} items using selector: ${selector}`);
+                    break;
                 }
-            });
+            }
 
             if (results.length > 0) return results;
-        } catch (e) { console.error('Scrape error:', e.message); }
+            console.log(`[Search] No results found on ${searchUrl}`);
+        } catch (e) { 
+            console.error(`[Search] Error fetching ${searchUrl}:`, e.message); 
+        }
     }
+    console.log('[Search] All search attempts failed.');
     return [];
 }
 
@@ -96,6 +115,8 @@ async function scrapeNaverSearch(keyword) {
 app.post('/api/analyze', async (req, res) => {
     const { url, keywords = [] } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
+    console.log(`[Analyze] Processing URL: ${url}`);
+
     const info = parseNaverUrl(url);
     if (!info) return res.status(400).json({ error: '유효한 네이버 블로그 주소가 아닙니다.' });
 
@@ -114,7 +135,6 @@ app.post('/api/analyze', async (req, res) => {
         const charCount = cleanBodyText.replace(/\s/g, '').length;
         const imageCount = contentArea.find('img').length;
         
-        // SEO Stats for AI Guide
         const charDetails = {
             total: charCount,
             totalWithSpaces: cleanBodyText.length,
@@ -155,34 +175,45 @@ app.post('/api/analyze', async (req, res) => {
         }
 
         res.json({ title, charCount, charDetails, imageCount, images, topKeywords, customKeywordsResults, seoScore: score, seoDetails: details, url: targetUrl });
-    } catch (error) { res.status(500).json({ error: 'Failed to analyze' }); }
+    } catch (error) { 
+        console.error(`[Analyze] Error analyzing ${url}:`, error.message);
+        res.status(500).json({ error: 'Failed to analyze' }); 
+    }
 });
 
-// Endpoint: Competitor Analysis (Improved with Concurrent Requests)
+// Endpoint: Competitor Analysis
 app.post('/api/competitors', async (req, res) => {
     const { keyword } = req.body;
     if (!keyword) return res.status(400).json({ error: 'Keyword required' });
 
+    console.log(`[Comp] Starting competitor analysis for: "${keyword}"`);
+
     try {
         const topResults = await scrapeNaverSearch(keyword);
         if (!topResults || topResults.length === 0) {
+            console.log('[Comp] No search results to analyze.');
             return res.json({ competitors: [] });
         }
 
-        // Parallel processing for speed
+        console.log(`[Comp] Analyzing top ${Math.min(topResults.length, 5)} competitors...`);
+
         const competitorPromises = topResults.slice(0, 5).map(async (result) => {
             try {
                 const info = parseNaverUrl(result.url);
-                if (!info) return { ...result, charCount: 0, imgCount: 0 };
+                if (!info) {
+                    console.log(`[Comp] Could not parse URL: ${result.url}`);
+                    return { ...result, charCount: 0, imgCount: 0 };
+                }
 
                 const directUrl = `https://blog.naver.com/PostView.naver?blogId=${info.blogId}&logNo=${info.logNo}`;
+                console.log(`[Comp] Fetching blog content: ${directUrl}`);
+                
                 const postRes = await axios.get(directUrl, { 
                     headers: { 
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                         'Referer': 'https://blog.naver.com/',
-                        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
                     }, 
-                    timeout: 4000 
+                    timeout: 5000 
                 });
 
                 const $comp = cheerio.load(postRes.data);
@@ -191,26 +222,27 @@ app.post('/api/competitors', async (req, res) => {
                 if (contentArea.length === 0) contentArea = $comp('.post_ct').first();
                 
                 const text = contentArea.text().replace(/\s+/g, ' ').trim();
-                return {
-                    ...result,
-                    charCount: text.replace(/\s/g, '').length || 0,
-                    imgCount: contentArea.find('img').length || 0
-                };
+                const charCount = text.replace(/\s/g, '').length || 0;
+                const imgCount = contentArea.find('img').length || 0;
+                
+                console.log(`[Comp] SUCCESS: ${result.title.substring(0,15)}... (${charCount} chars, ${imgCount} imgs)`);
+                return { ...result, charCount, imgCount };
             } catch (err) {
-                console.error(`Competitor fetch failed for ${result.url}:`, err.message);
+                console.error(`[Comp] FAILED for ${result.url}:`, err.message);
                 return { ...result, charCount: 0, imgCount: 0 };
             }
         });
 
         const competitors = await Promise.all(competitorPromises);
+        console.log(`[Comp] Completed. Returning ${competitors.length} results.`);
         res.json({ competitors });
     } catch (error) {
-        console.error('Competitor Analysis Error:', error.message);
+        console.error('[Comp] Critical Error:', error.message);
         res.status(500).json({ error: 'Failed to analyze competitors' });
     }
 });
 
-// Endpoint: Other features...
+// Endpoint: Proxy Image
 app.get('/api/proxy-image', async (req, res) => {
     const { url } = req.query;
     try {
@@ -266,7 +298,7 @@ app.post('/api/related-keywords', async (req, res) => {
 
 async function startServer(port) {
     const serverPort = port || process.env.PORT || 5001;
-    app.listen(serverPort, () => console.log(`Server running on port ${serverPort}`));
+    app.listen(serverPort, () => console.log(`[Server] Running on port ${serverPort}`));
 }
 
 if (require.main === module) startServer();
