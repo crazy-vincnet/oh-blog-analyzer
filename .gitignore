@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist_electron/
+client/dist/
+server/node_modules/
+blogpulse.db
+.DS_Store
+.env
+*.log
