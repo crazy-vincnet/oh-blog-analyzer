@@ -449,6 +449,29 @@ async function scrapeNaverSearch(keyword) {
     return [];
 }
 
+// Endpoint: Proxy Image to bypass CORS/Referer
+app.get('/api/proxy-image', async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'URL required' });
+
+    try {
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://blog.naver.com/'
+            }
+        });
+
+        const contentType = response.headers['content-type'];
+        res.set('Content-Type', contentType);
+        res.send(response.data);
+    } catch (error) {
+        console.error('Proxy image error:', error.message);
+        res.status(500).json({ error: 'Failed to proxy image' });
+    }
+});
+
 // Endpoint: Competitor Analysis
 app.post('/api/competitors', async (req, res) => {
     const { keyword } = req.body;

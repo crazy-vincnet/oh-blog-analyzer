@@ -449,7 +449,7 @@ function App() {
                     <div className="card-header"><h3>수집된 이미지 분석</h3> {result.imageMetadata && result.imageMetadata.length > 0 && <span className="badge-original">원본 감지</span>}</div>
                     <div className="image-slider">
                       {result.images.map((img, i) => (
-                        <div key={i} className="slide-item" onClick={() => setSelectedImage(img)}><img src={img} alt="captured" loading="lazy" /></div>
+                        <div key={i} className="slide-item" onClick={() => setSelectedImage(img)}><img src={`${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(img)}`} alt="captured" loading="lazy" /></div>
                       ))}
                     </div>
                   </div>
@@ -569,7 +569,7 @@ function App() {
       {selectedImage && (
         <div className="modal-overlay" onClick={() => setSelectedImage(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <img src={selectedImage} alt="Large" />
+            <img src={`${API_BASE_URL}/api/proxy-image?url=${encodeURIComponent(selectedImage)}`} alt="Large" />
             <button className="btn-close-modal" onClick={() => setSelectedImage(null)}>&times;</button>
           </div>
         </div>
