@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import html2canvas from 'html2canvas'
 import download from 'downloadjs'
 import { History, Users, Search, Settings, ArrowLeft, Download, RefreshCw, BarChart2, Award, Info, AlertTriangle, Trash2, Zap, ExternalLink, Moon, Sun, Sparkles, MessageSquare, Tag } from 'lucide-react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
@@ -574,6 +575,7 @@ function App() {
           </div>
         </div>
       )}
+      <SpeedInsights />
     </div>
   )
 }
