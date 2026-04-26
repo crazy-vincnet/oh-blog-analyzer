@@ -1000,6 +1000,7 @@ body {
     border-radius: 10px; 
     border: 1px solid #eee; 
     background: white; 
+    color: black;
     font-weight: 800; 
     cursor: pointer; 
     display: flex; 
@@ -1212,6 +1213,22 @@ body {
     }
 
     .settings-card button {
+        width: 100%;
+    }
+
+    /* History View Mobile */
+    .history-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px;
+    }
+
+    .history-card .h-info {
+        width: 100%;
+    }
+
+    .history-card .btn-h-re {
         width: 100%;
     }
 
