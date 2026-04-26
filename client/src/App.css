@@ -1183,6 +1183,20 @@ body {
         font-size: 0.95rem;
     }
 
+    .comp-input-box {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .comp-input-box input {
+        width: 100%;
+    }
+
+    .comp-input-box button {
+        width: 100%;
+        padding: 16px;
+    }
+
     /* Rankings Table-like items to cards */
     .rank-item {
         grid-template-columns: 1fr;
