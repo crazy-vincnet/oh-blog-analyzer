@@ -252,7 +252,7 @@ function App() {
           <button className={currentView === 'rankings' ? 'active' : ''} onClick={() => setCurrentView('rankings')}>
             <BarChart2 size={20} /> 순위 추적기
           </button>
-          <button className={currentView === 'history' ? 'active' : ''} onClick={() => setCurrentView('history')}>
+          <button className={currentView === 'history' ? 'active' : ''} onClick={() => { setCurrentView('history'); setResult(null); }}>
             <History size={20} /> 히스토리
           </button>
           <button className={currentView === 'settings' ? 'active' : ''} onClick={() => setCurrentView('settings')}>

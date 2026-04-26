@@ -208,9 +208,15 @@ app.post('/api/analyze', async (req, res) => {
 
         // Save to Supabase
         if (supabase) {
-            await supabase.from('history').insert([
+            const { error: dbError } = await supabase.from('history').insert([
                 { title, url: targetUrl, score, char_count: charCountExcludingSpaces, img_count: imageCount }
             ]);
+            
+            if (dbError) {
+                console.error('Supabase Insert Error:', dbError.message);
+            } else {
+                console.log('Successfully saved to Supabase history.');
+            }
         }
 
         res.json({
