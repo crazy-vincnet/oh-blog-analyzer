@@ -137,14 +137,89 @@ app.post('/api/analyze', async (req, res) => {
             inTitle: title.includes(kw)
         }));
 
+        // SEO Scoring Logic with Actionable Recommendations - ENHANCED
         let score = 0;
         const details = [];
-        if (keywords.some(kw => title.includes(kw))) { score += 20; details.push({ criterion: '제목 키워드', score: 20, status: 'good', message: '제목에 키워드가 잘 반영되었습니다.' }); }
-        if (charCount > 1500) { score += 30; details.push({ criterion: '글자 수', score: 30, status: 'good', message: '충분한 분량의 글입니다.' }); }
-        else { score += 15; details.push({ criterion: '글자 수', score: 15, status: 'warn', message: '내용을 조금 더 보완해 보세요.' }); }
-        if (imageCount >= 12) { score += 20; details.push({ criterion: '사진 구성', score: 20, status: 'good', message: '사진이 풍부하게 사용되었습니다.' }); }
-        else { score += 10; details.push({ criterion: '사진 구성', score: 10, status: 'warn', message: '사진을 더 추가해 보세요.' }); }
-        score += 30;
+
+        // 1. Title Keyword Check (15 pts)
+        const keywordsInTitle = customKeywordsResults.filter(r => r.inTitle).length;
+        if (keywordsInTitle > 0) {
+            score += 15;
+            details.push({ criterion: '제목 키워드', score: 15, status: 'good', message: '제목에 핵심 키워드가 아주 잘 포함되었습니다.' });
+        } else {
+            details.push({ criterion: '제목 키워드', score: 0, status: 'bad', message: '제목에 핵심 키워드를 넣으면 검색 노출 확률이 크게 올라갑니다.' });
+        }
+
+        // 2. Early Introduction Keyword (10 pts)
+        const first300 = cleanBodyText.substring(0, 300).toLowerCase();
+        const hasEarlyKeyword = keywords.some(kw => first300.includes(kw.toLowerCase()));
+        if (hasEarlyKeyword) {
+            score += 10;
+            details.push({ criterion: '도입부 키워드', score: 10, status: 'good', message: '글의 도입부(첫 300자)에 키워드가 자연스럽게 배치되었습니다.' });
+        } else {
+            details.push({ criterion: '도입부 키워드', score: 0, status: 'warn', message: '글의 초반부에 핵심 키워드를 언급하여 주제를 명확히 해주세요.' });
+        }
+
+        // 3. Keyword Density (15 pts)
+        if (keywords.length > 0) {
+            const totalCount = customKeywordsResults.reduce((sum, r) => sum + r.count, 0);
+            const avgDensity = totalCount / keywords.length;
+            if (avgDensity >= 3 && avgDensity <= 8) {
+                score += 15;
+                details.push({ criterion: '키워드 빈도', score: 15, status: 'good', message: `키워드가 평균 ${avgDensity.toFixed(1)}회로 아주 적절하게 반복되었습니다.` });
+            } else if (avgDensity < 3) {
+                score += 5;
+                details.push({ criterion: '키워드 빈도', score: 5, status: 'warn', message: '키워드 언급 횟수가 다소 적습니다. 문맥에 맞게 1~2회 더 추가해 보세요.' });
+            } else {
+                details.push({ criterion: '키워드 빈도', score: 0, status: 'bad', message: '특정 단어가 너무 자주 반복되면 스팸으로 인식될 수 있으니 주의하세요.' });
+            }
+        }
+
+        // 4. Content Depth (20 pts)
+        if (charCount > 1800) {
+            score += 20;
+            details.push({ criterion: '콘텐츠 분량', score: 20, status: 'good', message: '상당히 전문적이고 풍부한 분량의 포스팅입니다.' });
+        } else if (charCount > 1000) {
+            score += 10;
+            details.push({ criterion: '콘텐츠 분량', score: 10, status: 'warn', message: '내용은 준수하지만, 500자 정도 더 보완하면 상위 노출에 유리합니다.' });
+        } else {
+            score += 5;
+            details.push({ criterion: '콘텐츠 분량', score: 5, status: 'bad', message: '분량이 너무 짧습니다. 독자에게 줄 수 있는 정보를 더 추가해 보세요.' });
+        }
+
+        // 5. Structural Formatting (15 pts)
+        const hasLists = cleanBodyText.includes('•') || cleanBodyText.includes('·') || cleanBodyText.includes('- ');
+        const hasBold = response.data.includes('</strong>') || response.data.includes('</b>') || response.data.includes('se-text-bold');
+        if (hasLists && hasBold) {
+            score += 15;
+            details.push({ criterion: '가독성 구조', score: 15, status: 'good', message: '불렛포인트와 강조 텍스트를 사용하여 읽기 매우 편한 구조입니다.' });
+        } else if (hasLists || hasBold) {
+            score += 8;
+            details.push({ criterion: '가독성 구조', score: 8, status: 'warn', message: '중요한 부분에 굵은 글씨나 리스트를 활용하면 체류 시간이 늘어납니다.' });
+        } else {
+            details.push({ criterion: '가독성 구조', score: 0, status: 'bad', message: '단순 텍스트 위주입니다. 문단을 나누고 강조 요소를 추가해 보세요.' });
+        }
+
+        // 6. Multimedia Composition (15 pts)
+        if (imageCount >= 15) {
+            score += 15;
+            details.push({ criterion: '사진 구성', score: 15, status: 'good', message: '사진이 풍부하여 시각적인 만족도가 높은 포스팅입니다.' });
+        } else if (imageCount >= 8) {
+            score += 10;
+            details.push({ criterion: '사진 구성', score: 10, status: 'good', message: '적절한 개수의 이미지가 포함되어 있습니다.' });
+        } else {
+            score += 5;
+            details.push({ criterion: '사진 구성', score: 5, status: 'warn', message: '이미지 개수가 부족합니다. 3~5장 정도의 사진을 더 배치해 보세요.' });
+        }
+
+        // 7. Information Diversity (10 pts)
+        const isDiverse = charDetails.english > 50 || charDetails.number > 30;
+        if (isDiverse) {
+            score += 10;
+            details.push({ criterion: '정보 다양성', score: 10, status: 'good', message: '수치 데이터나 외국어 명칭 등이 포함되어 정보의 신뢰도가 높습니다.' });
+        } else {
+            details.push({ criterion: '정보 다양성', score: 0, status: 'info', message: '구체적인 수치(숫자)나 정확한 명칭을 포함하면 전문성이 올라갑니다.' });
+        }
 
         const images = [];
         contentArea.find('img').each((i, el) => {
