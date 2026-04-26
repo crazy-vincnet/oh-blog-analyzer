@@ -1197,6 +1197,24 @@ body {
         padding: 16px;
     }
 
+    /* Settings View Mobile */
+    .settings-card {
+        flex-direction: column;
+        gap: 20px;
+        padding: 24px !important;
+        align-items: flex-start;
+    }
+
+    .settings-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .settings-card button {
+        width: 100%;
+    }
+
     /* Rankings Table-like items to cards */
     .rank-item {
         grid-template-columns: 1fr;
