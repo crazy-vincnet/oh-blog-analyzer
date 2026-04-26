@@ -133,19 +133,78 @@ app.post('/api/analyze', async (req, res) => {
             return { keyword: kw, count, inTitle };
         });
 
-        // SEO Scoring
+        // SEO Scoring Logic with Actionable Recommendations - FULL RESTORATION
         let score = 0;
         const details = [];
 
-        // Simple scoring rules
-        if (keywords.some(kw => title.includes(kw))) { score += 20; details.push({ criterion: '제목 키워드', score: 20, status: 'good', message: '제목에 키워드가 잘 반영되었습니다.' }); }
-        if (charCountExcludingSpaces > 1500) { score += 30; details.push({ criterion: '글자 수', score: 30, status: 'good', message: '충분한 분량의 글입니다.' }); }
-        else { score += 15; details.push({ criterion: '글자 수', score: 15, status: 'warn', message: '조금 더 내용을 보완하면 좋습니다.' }); }
-        
-        if (imageCount >= 10) { score += 20; details.push({ criterion: '사진 개수', score: 20, status: 'good', message: '사진이 풍부하게 사용되었습니다.' }); }
-        else { score += 10; details.push({ criterion: '사진 개수', score: 10, status: 'warn', message: '사진을 더 추가해 보세요.' }); }
+        // 1. Title & Answer-First Structure (20 pts)
+        const keywordsInTitle = customKeywordsResults.filter(r => r.inTitle).length;
+        const firstParagraph = cleanBodyText.substring(0, 300).toLowerCase();
+        const hasEarlyKeyword = keywords.some(kw => firstParagraph.includes(kw.toLowerCase()));
 
-        score += 30; // Base score for structure
+        if (keywordsInTitle > 0 && hasEarlyKeyword) {
+            score += 20;
+            details.push({ criterion: '제목 및 도입부', score: 20, status: 'good', message: '완벽해요! 제목과 도입부에 키워드가 아주 잘 배치되었습니다.' });
+        } else {
+            let msg = '';
+            if (keywordsInTitle === 0) msg += '제목에 핵심 키워드를 꼭 넣어주세요. ';
+            if (!hasEarlyKeyword) msg += '글의 첫 부분(도입부)에도 키워드를 자연스럽게 노출해 보세요.';
+            details.push({ criterion: '제목 및 도입부', score: 0, status: 'bad', message: msg || '도입부 구성을 조금 더 보완해볼까요?' });
+        }
+
+        // 2. Contextual Keyword Density (20 pts)
+        if (keywords.length > 0) {
+            const totalCount = customKeywordsResults.reduce((sum, r) => sum + r.count, 0);
+            const avgCount = totalCount / keywords.length;
+            
+            if (avgCount >= 3 && avgCount <= 5) {
+                score += 20;
+                details.push({ criterion: '키워드 밀도', score: 20, status: 'good', message: '아주 적절한 빈도입니다. 이대로 유지하시면 좋아요!' });
+            } else if (avgCount < 3) {
+                score += 10;
+                details.push({ criterion: '키워드 밀도', score: 10, status: 'warn', message: `핵심 단어가 조금 부족해요. 1~2번 정도만 더 언급해 보는 건 어떨까요?` });
+            } else {
+                const overCount = Math.ceil(avgCount - 5);
+                details.push({ criterion: '키워드 밀도', score: 0, status: 'bad', message: `키워드가 너무 자주 나와요! ${overCount}번 정도 줄여야 어뷰징 위험을 피할 수 있어요.` });
+            }
+        } else {
+             details.push({ criterion: '키워드 밀도', score: 0, status: 'info', message: '타겟 키워드를 입력하시면 정밀 밀도 분석이 가능합니다.' });
+        }
+
+        // 3. Content Depth (20 pts)
+        if (charCountExcludingSpaces > 1800) {
+            score += 20;
+            details.push({ criterion: '글의 분량', score: 20, status: 'good', message: '충분한 정성이 느껴지는 분량이에요. 전문성이 돋보입니다!' });
+        } else if (charCountExcludingSpaces > 1000) {
+            score += 10;
+            details.push({ criterion: '글의 분량', score: 10, status: 'warn', message: `적절한 분량이지만, ${1800 - charCountExcludingSpaces}자 정도 더 보완하면 전문성 점수가 올라갑니다.` });
+        } else {
+            details.push({ criterion: '글의 분량', score: 5, status: 'bad', message: `내용이 다소 짧습니다. 약 ${1000 - charCountExcludingSpaces}자 이상 더 작성하시는 것을 권장합니다.` });
+            score += 5;
+        }
+
+        // 4. Structural Formatting (15 pts)
+        const hasStructure = rawBodyText.includes('•') || rawBodyText.includes('·') || rawBodyText.includes('- ') || response.data.includes('</strong>') || response.data.includes('</b>');
+        if (hasStructure) {
+            score += 15;
+            details.push({ criterion: '가독성 구조', score: 15, status: 'good', message: '불렛포인트나 강조 텍스트를 사용하여 읽기 편한 구조를 갖췄습니다.' });
+        } else {
+            details.push({ criterion: '가독성 구조', score: 0, status: 'bad', message: '중요한 단어를 굵게 만들거나, 불렛포인트(•)를 쓰면 AI가 더 좋아해요!' });
+        }
+
+        // 5. Multimedia (15 pts)
+        if (imageCount >= 12) {
+            score += 15;
+            details.push({ criterion: '사진 구성', score: 15, status: 'good', message: '풍부한 사진이 독자의 눈을 즐겁게 해줄 거예요!' });
+        } else {
+            const needMoreImg = 12 - imageCount;
+            score += 5;
+            details.push({ criterion: '사진 구성', score: 5, status: 'warn', message: `사진을 ${needMoreImg}장 정도만 더 추가해서 시각 정보를 풍부하게 채워보세요.` });
+        }
+
+        // 6. Image Originality (10 pts)
+        score += 10; // Defaulting for simple web version, can be refined with EXIF later
+        details.push({ criterion: '이미지 독창성', score: 10, status: 'good', message: '직접 촬영한 원본 사진 데이터를 최대한 활용해 주세요!' });
 
         // Save to Supabase
         if (supabase) {
