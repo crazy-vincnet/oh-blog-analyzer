@@ -46,8 +46,8 @@ function parseNaverUrl(url) {
 // Helper: Scrape Naver Search Results
 async function scrapeNaverSearch(keyword) {
     const urls = [
-        `https://m.blog.naver.com/SectionPostSearch.naver?searchValue=${encodeURIComponent(keyword)}`,
-        `https://search.naver.com/search.naver?where=blog&query=${encodeURIComponent(keyword)}`
+        `https://search.naver.com/search.naver?ssc=tab.blog.all&sm=tab_jum&query=${encodeURIComponent(keyword)}`,
+        `https://m.blog.naver.com/SectionPostSearch.naver?searchValue=${encodeURIComponent(keyword)}`
     ];
 
     console.log(`[Search] Starting search for keyword: "${keyword}"`);
